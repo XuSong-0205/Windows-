@@ -60,7 +60,7 @@ void Client::postRecv()
 {
 	while (!clientQuit)
 	{
-		if(recv(socketServer, recvBuff, BUFF_SIZE, 0) == SOCKET_ERROR)
+		if(!clientQuit && recv(socketServer, recvBuff, BUFF_SIZE, 0) == SOCKET_ERROR)
 		{
 			int error_code = WSAGetLastError();
 			switch (error_code)
@@ -74,7 +74,15 @@ void Client::postRecv()
 		}
 		else
 		{
-			cout << "服务器 : " << recvBuff << endl;
+			// 解析发送者的id
+			int id = 0;
+			string msg(recvBuff);
+			auto pos = msg.find(':');
+			istringstream iss(msg.substr(0, pos));
+			iss >> id;
+
+			if (id == 0)	cout << "服务器 : " << recvBuff + pos + 1 << endl;
+			else cout << "客户端[" << id << "] : " << recvBuff + pos + 1 << endl;
 		}
 	}
 }
@@ -82,18 +90,26 @@ void Client::postRecv()
 // 处理send
 void Client::postSend()
 {
+	string msg;
 	while (!clientQuit)
 	{
-		cin.getline(sendBuff, BUFF_SIZE);
-		if (sendBuff[0] == 0) continue;
+		msg.clear();
+		getline(cin, msg);
+		if (msg.empty()) continue;
 
-		if (string("quit") == sendBuff)
+		// 解析是否发送消息
+		auto pos = msg.find(':');
+		if (pos != string::npos)
+		{
+			strcpy_s(sendBuff, msg.c_str());
+			send(socketServer, sendBuff, BUFF_SIZE, 0);
+		}
+
+		if (msg == "quit")
 		{
 			clientQuit = true;
 			return;
 		}
-
-		send(socketServer, sendBuff, BUFF_SIZE, 0);
 	}
 }
 

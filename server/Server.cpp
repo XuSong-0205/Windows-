@@ -118,7 +118,7 @@ int Server::postAccept()
 	sockOver.emplace_back(SocketOverlapped{});
 	sockOver.back().sock = socketClient;
 	sockOver.back().overlap.hEvent = WSACreateEvent();
-	sockOver.back().id = sockOver.size() - 1;
+	sockOver.back().id = int(socketClient);		// 客户端 id 为客户端的socket
 	soIt[socketClient] = --sockOver.end();
 
 	DWORD dwRecvCount = 0;
@@ -181,22 +181,54 @@ int Server::postSend(int sock)
 // 给客户端发送消息
 void Server::sendMsg()
 {
-	cin.getline(sendBuff, BUFF_SIZE);
+	string msg;
+	getline(cin, msg);
+	if (msg.empty()) return;
+
+	auto pos = msg.find(':');
+	if (pos != string::npos)
+	{
+		int id = 0;
+		vector<int> ids;
+		istringstream iss(msg.substr(0, pos));
+		while (iss >> id) ids.push_back(id);
+
+		// 设置要发送的消息
+		size_t i = 1;
+		sendBuff[0] = ':';
+		for (size_t j = pos + 1; j < msg.size(); ++i, ++j) sendBuff[i] = msg.at(j);
+		sendBuff[i] = 0;
+
+		if (ids.empty())
+		{
+			// 给所有客户端发送消息
+			for (const auto& so : sockOver)
+			{
+				postSend(so.sock);
+			}
+		}
+		else
+		{
+			// 只给部分客户端发送消息
+			for (auto id : ids)
+			{
+				postSend(id);
+			}
+		}
+
+		return;
+	}
+
 	// 解析
-	if (string("server quit") == sendBuff)
+	if ("server quit" == msg)
 	{
 		serverQuit = true;
 		// 等待500毫秒，等待各线程执行结束退出
 		Sleep(500);
 		return;
 	}
-
-	// 给所有客户端发送消息
-	for (const auto& so : sockOver)
-	{
-		postSend(so.sock);
-	}
 }
+
 
 // 线程的回调函数
 DWORD WINAPI ThreadProc(LPVOID lptr)
@@ -255,13 +287,13 @@ DWORD WINAPI ThreadProc(LPVOID lptr)
 				}
 
 				// 设置该客户端id
-				server->sockOver.back().id = server->sockOver.size() - 1;
+				server->sockOver.back().id = int(socketClient);
 				// 打印客户端登录成功消息
 				cout << "客户端[" << server->soIt.at(socketClient)->id
 					<< "] 登录成功" << endl;
 
 				// 给客户端发送登录成功信息
-				strcpy_s(server->sendBuff, "欢迎登录！");
+				sprintf_s(server->sendBuff, ":[%d]欢迎登录！", server->soIt.at(socketClient)->id);
 				server->postSend(server->soIt.at(socketClient)->sock);
 
 				// 投递recv
@@ -291,10 +323,44 @@ DWORD WINAPI ThreadProc(LPVOID lptr)
 					if (server->recvBuff[0])
 					{
 						// recv
-						cout << "客户端[" << server->soIt.at(sock)->id << "] : "
-							<< server->recvBuff << endl;
+						string str(server->recvBuff);
+						auto pos = str.find(':');
+						// 要接收此消息的id 目的id(socket)
+						int id = 0;
+
+						istringstream iss(str.substr(0, pos));
+						iss >> id;
+
+						if (id)
+						{
+							// 转发消息 把接收者信息换成发送者信息
+							sprintf_s(server->sendBuff, "%d:%s",
+								server->soIt.at(theSocket)->id, server->recvBuff + pos + 1);
+							// 检查该客户端是否存在
+							if (server->soIt.count(id))
+							{
+								server->postSend(id);
+								server->recvBuff[0] = 0;
+								// 服务器打印一条转发消息
+								cout << "转发消息[" << server->soIt.at(theSocket)->id << "] ——> ["
+									<< id << "]" << endl;
+							}
+							else
+							{
+								cout << "客户端[" << id << "] 不存在" << endl;
+								// 给客户端发送一条信息
+								sprintf_s(server->sendBuff, ":客户端[%d] 不存在", id);
+								server->postSend(server->soIt.at(theSocket)->id);
+							}
+						}
+						else
+						{
+							cout << "客户端[" << server->soIt.at(theSocket)->id << "] : "
+								<< server->recvBuff + pos + 1 << endl;
+						}
 						server->recvBuff[0] = 0;
-						// 再次投递recv 服务器socket
+
+						// 再次投递recv 
 						server->postRecv(server->soIt.at(theSocket)->sock);
 					}
 					else

@@ -1,5 +1,6 @@
 #pragma once
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <cstdlib>
@@ -14,7 +15,7 @@ private:
 	constexpr static int PORT = 10240;
 	constexpr static int BUFF_SIZE = 1024;
 	const char* SERVER_ADDRESS = "10.100.240.12";
-	char sendBuff[BUFF_SIZE] = {0};
+	char sendBuff[BUFF_SIZE] = { 0 };
 	char recvBuff[BUFF_SIZE] = { 0 };
 
 	bool clientQuit = false;				// 客户端是否退出
